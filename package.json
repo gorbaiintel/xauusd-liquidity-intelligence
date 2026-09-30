@@ -1,6 +1,6 @@
 {
   "name": "xauusd-liquidity-intelligence",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": { "dev": "tsx watch server/index.ts", "typecheck": "tsc --noEmit", "build": "tsc -p tsconfig.json && vite build --config client/vite.config.ts", "start": "node dist/server/index.js", "android:add": "npx cap add android", "android:sync": "npm run build && npx cap sync android", "android:open": "npx cap open android" },

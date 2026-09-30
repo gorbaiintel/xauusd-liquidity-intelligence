@@ -3,4 +3,5 @@ export type SignalDecision = 'LONG' | 'SHORT' | 'WAIT';
 export type SignalNode = { id: string; label: string; passed: boolean; score: number; detail: string };
 export type Signal = { decision: SignalDecision; score: number; reasons: string[]; gates: Record<string, boolean>; tree: SignalNode[]; metrics: { atr: number; spread: number; trend: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; session: string; riskReward: number }; generatedAt: number };
 export type FeedState = { connected: boolean; source: string; instrument: 'XAU_USD'; lastTickAt: number | null; lastFrameAt: number | null; streamQuiet: boolean; bid: number | null; ask: number | null; spread: number | null; error?: string };
-export type Snapshot = { candle: Candle; candles: Candle[]; signal: Signal; feed: FeedState };
+export type JournalEntry = { id: string; time: number; decision: SignalDecision; score: number; price: number; status: 'CANDIDATE' | 'VALIDATING' | 'APPROVED' | 'REJECTED'; rationale: string; gates: Record<string, boolean> };
+export type Snapshot = { candle: Candle; candles: Candle[]; signal: Signal; feed: FeedState; journal: JournalEntry[] };

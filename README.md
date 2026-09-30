@@ -1,36 +1,35 @@
-# XAUUSD Liquidity Intelligence — Pro
+# XAUUSD Liquidity Intelligence — Premium UI v1.2
 
-Aplikasi ini hanya untuk **XAUUSD spot** dan menggunakan data resmi akun OANDA. Tidak ada harga random, mock candle, atau fallback sintetis.
+Update ini menambahkan UI premium yang lebih siap desktop maupun Android:
 
-## Yang ditambahkan pada versi pro
-- OANDA Pricing **stream** untuk bid/ask real-time, bukan polling harga buatan.
-- Riwayat 300 candle M1 dari OANDA, lalu candle berjalan diperbarui oleh tick stream.
-- Reconnect otomatis dan indikator `lastFrameAt`, `streamQuiet`, bid, ask, spread.
-- Signal Tree fail-closed: live data → trend alignment → liquidity sweep → displacement → FVG → session filter → risk gate.
-- Setiap node memiliki status, skor, dan alasan yang bisa diaudit.
-- Frontend menampilkan LONG/SHORT/WAIT, score, spread, ATR, session, dan status stream.
-- Android tetap aman: API key OANDA hanya di backend; APK tidak pernah menyimpan token.
+- Candlestick chart SVG asli dari candle OANDA (wick, body, grid, live price line), tanpa chart random.
+- Signal Tree 6 node: live feed, trend alignment, liquidity sweep, displacement, FVG context, session filter.
+- Panel market context: bid, ask, spread, trend, session, ATR, risk/reward, tick age.
+- Signal Journal in-memory untuk audit evaluasi signal terbaru.
+- Layout responsive untuk layar kecil dan Android WebView.
+- WebSocket live tetap memakai OANDA backend; API key tidak pernah masuk APK.
 
-## Menjalankan lokal
+## Jalankan
 ```bash
 cp .env.example .env
-# isi OANDA_ENV, OANDA_ACCOUNT_ID, OANDA_ACCESS_TOKEN
 npm install
 npm run typecheck
 npm run dev
 ```
-Buka `http://localhost:8787`. Akun Practice disarankan untuk validasi awal. Instrumen harus tersedia di akun sebagai `XAU_USD`.
+Buka `http://localhost:8787`.
 
-## Deploy untuk APK
-Deploy backend pada URL HTTPS publik (misalnya `https://api.example.com`), lalu build frontend dengan `VITE_API_BASE_URL=https://api.example.com`. Jangan memasukkan token OANDA ke Vite, Capacitor, atau APK.
-
+## Build Android Studio
+Backend harus di-deploy lebih dahulu ke HTTPS, misalnya `https://api.example.com`. Lalu:
 ```bash
 VITE_API_BASE_URL=https://api.example.com npm run build
-npm run android:add       # sekali
+npm run android:add       # sekali saja
 npm run android:sync
 npm run android:open
 ```
-Di Android Studio gunakan **Build → Generate Signed Bundle / APK**. Backend harus mengizinkan origin aplikasi dan endpoint WebSocket `/ws` harus tersedia melalui TLS (`wss://`).
+Di Android Studio: **Build → Generate Signed Bundle / APK**. WebSocket publik harus tersedia sebagai `wss://api.example.com/ws`; secret OANDA hanya berada di backend.
 
-## Batasan dan validasi
-Signal ini adalah engine deterministik untuk riset, bukan jaminan akurasi, rekomendasi, atau nasihat investasi. Sebelum live trading, tambahkan backtest candle historis, spread/slippage, news filter, session rules yang tervalidasi, journal, paper trading, monitoring, rate-limit, dan test out-of-sample. Jangan gunakan output otomatis untuk mengeksekusi order tanpa kontrol risiko terpisah.
+## Catatan journal
+Journal saat ini adalah audit trail memori proses dan akan hilang ketika server restart. Untuk production, simpan ke PostgreSQL/SQLite dengan retention policy dan tambahkan autentikasi pengguna.
+
+## Peringatan
+Signal LONG/SHORT/WAIT adalah output riset deterministik, bukan jaminan profit atau nasihat investasi. Validasi dengan backtest, spread/slippage, paper trading, out-of-sample test, dan kontrol risiko independen sebelum penggunaan live.
