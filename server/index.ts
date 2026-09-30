@@ -1,9 +1,69 @@
 import 'dotenv/config';
-import express from 'express'; import cors from 'cors'; import { WebSocketServer, WebSocket } from 'ws'; import http from 'node:http'; import { OandaFeed } from './oandaFeed.js'; import { analyze } from './signalTree.js'; import type { JournalEntry } from '../shared/types.js';
-const app = express(); app.use(cors()); app.use(express.json()); const server = http.createServer(app); const wss = new WebSocketServer({ server, path: '/ws' }); const feed = new OandaFeed('XAU_USD'); const clients = new Set<WebSocket>(); const journal: JournalEntry[] = [];
-let lastBroadcast = 0; let lastJournalKey = '';
-function snapshot() { const candles = feed.getCandles(); const candle = candles.at(-1); if (!candle) return null; const signal = analyze(candles); signal.metrics.spread = feed.state().spread ?? 0; const key = `${signal.generatedAt}-${signal.decision}-${candle.time}`; if (key !== lastJournalKey) { lastJournalKey = key; journal.unshift({ id: key, time: signal.generatedAt, decision: signal.decision, score: signal.score, price: candle.close, status: signal.decision === 'WAIT' ? 'REJECTED' : signal.score >= 70 ? 'APPROVED' : 'VALIDATING', rationale: signal.reasons.at(-1) ?? 'No rationale', gates: signal.gates }); if (journal.length > 50) journal.pop(); } return { candle, candles, signal, feed: feed.state(), journal }; }
-function broadcast() { const data = snapshot(); if (!data || Date.now() - lastBroadcast < 250) return; lastBroadcast = Date.now(); const msg = JSON.stringify(data); clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg); }); }
-feed.onUpdate(broadcast); wss.on('connection', ws => { clients.add(ws); const data = snapshot(); if (data) ws.send(JSON.stringify(data)); ws.on('close', () => clients.delete(ws)); });
-app.get('/api/health', (_req, res) => res.json(feed.state())); app.get('/api/journal', (_req, res) => res.json(journal)); app.get('/api/snapshot', (_req, res) => { const data = snapshot(); data ? res.json(data) : res.status(503).json({ error: 'Menunggu data OANDA live' }); });
-feed.start().catch(error => console.error('OANDA startup:', error)); const port = Number(process.env.PORT || 8787); server.listen(port, () => console.log(`XAUUSD server listening on ${port}`));
+import express from 'express';
+import cors from 'cors';
+import { WebSocketServer, WebSocket } from 'ws';
+import http from 'node:http';
+import { mkdir } from 'node:fs/promises';
+import { OandaFeed } from './oandaFeed.js';
+import { analyze } from './signalTree.js';
+import { JournalStore } from './journalStore.js';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+const feed = new OandaFeed('XAU_USD');
+const journalStore = new JournalStore();
+const clients = new Set<WebSocket>();
+let lastBroadcast = 0;
+let journalWriteKey = '';
+
+async function snapshot() {
+  const candles = feed.getCandles();
+  const candle = candles.at(-1);
+  if (!candle) return null;
+  const signal = analyze(candles);
+  const state = feed.state();
+  signal.metrics.spread = state.spread ?? 0;
+  return { candle, candles, signal, feed: state, journal: await journalStore.recent(50) };
+}
+
+async function broadcast() {
+  const data = await snapshot();
+  if (!data || Date.now() - lastBroadcast < 250) return;
+  const journalKey = `${data.candle.time}:${data.signal.decision}:${data.signal.score}`;
+  if (journalKey !== journalWriteKey) {
+    journalWriteKey = journalKey;
+    await journalStore.record(data.candle.time, data.signal, data.candle.close);
+    data.journal = await journalStore.recent(50);
+  }
+  lastBroadcast = Date.now();
+  const message = JSON.stringify(data);
+  clients.forEach(client => { if (client.readyState === WebSocket.OPEN) client.send(message); });
+}
+
+wss.on('connection', async ws => {
+  clients.add(ws);
+  const data = await snapshot();
+  if (data) ws.send(JSON.stringify(data));
+  ws.on('close', () => clients.delete(ws));
+});
+
+app.get('/api/health', (_req, res) => res.json(feed.state()));
+app.get('/api/journal', async (_req, res) => res.json(await journalStore.recent(200)));
+app.get('/api/snapshot', async (_req, res) => { const data = await snapshot(); data ? res.json(data) : res.status(503).json({ error: 'Menunggu data OANDA live' }); });
+
+async function start() {
+  const dbPath = process.env.JOURNAL_DB_PATH || './data/xauusd.sqlite';
+  await mkdir(dbPath.includes('/') ? dbPath.slice(0, dbPath.lastIndexOf('/')) : '.', { recursive: true });
+  await journalStore.open();
+  feed.onUpdate(() => { void broadcast().catch(error => console.error('Broadcast:', error)); });
+  await feed.start();
+  const port = Number(process.env.PORT || 8787);
+  server.listen(port, () => console.log(`XAUUSD server listening on ${port}`));
+}
+
+start().catch(error => { console.error('Startup failed:', error); process.exitCode = 1; });
+process.once('SIGTERM', () => { void journalStore.close(); server.close(); });
+process.once('SIGINT', () => { void journalStore.close(); server.close(); });
